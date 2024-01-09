@@ -112,7 +112,8 @@ class LLMNeedleHaystackTester(ABC):
             raise ValueError(
                 "document_depth_percent_interval_type must be either None, 'linear' or 'sigmoid'. If you'd like your own distribution give a list of ints in via document_depth_percent_intervals")
 
-        self.evaluation_model = ChatOpenAI(model="gpt-4", temperature=0, openai_api_key=self.openai_api_key)
+        # disable for local models
+        # self.evaluation_model = ChatOpenAI(model="gpt-4", temperature=0, openai_api_key=self.openai_api_key)
 
     def logistic(self, x, L=100, x0=50, k=.1):
         if x == 0:
@@ -164,7 +165,6 @@ class LLMNeedleHaystackTester(ABC):
         # Go see if the model can answer the question to pull out your random fact
         response = await self.get_response_from_model(prompt)
 
-
         test_end_time = time.time()
         test_elapsed_time = test_end_time - test_start_time
 
@@ -194,7 +194,7 @@ class LLMNeedleHaystackTester(ABC):
             print(f"Score: {score}")
             print(f"Response: {response}\n")
 
-        context_file_location = f'{self.model_name.replace(".", "_")}_len_{context_length}_depth_{int(depth_percent * 100)}'
+        context_file_location = f'{self.model_name.replace(".", "_").replace("/", "_")}_len_{context_length}_depth_{int(depth_percent * 100)}'
 
         if self.save_contexts:
             results['file_name']: context_file_location
@@ -228,7 +228,7 @@ class LLMNeedleHaystackTester(ABC):
             return False
 
         for filename in os.listdir(results_dir):
-            if filename.endswith('.json'):
+            if filename.endswith('.json') and not filename.startswith("."):
                 with open(os.path.join(results_dir, filename), 'r') as f:
                     result = json.load(f)
                     context_length_met = result['context_length'] == context_length
@@ -241,10 +241,8 @@ class LLMNeedleHaystackTester(ABC):
 
     async def generate_context(self, context_length, depth_percent):
         # Load up tiktoken so we navigate tokens more easily
-
         # Get your Paul Graham files loaded into a string
         context = self.read_context_files()
-
         # Truncate the Paul Graham essays to the context length you desire
         context = self.encode_and_trim(context, context_length)
 
@@ -345,14 +343,19 @@ class LLMNeedleHaystackTester(ABC):
     def get_context_length_in_tokens(self, context):
         return len(self.get_encoding(context))
 
+    # ~50 % faster
     def read_context_files(self):
         context = ""
         max_context_length = max(self.context_lengths)
+        curr_context_length = 0
 
-        while self.get_context_length_in_tokens(context) < max_context_length:
+        while curr_context_length < max_context_length:
             for file in glob.glob(f"{self.haystack_dir}/*.txt"):
                 with open(file, 'r') as f:
-                    context += f.read()
+                    file_content=f.read()
+                context += file_content
+                curr_context_length += len(self.get_encoding(file_content))
+
         return context
 
     def encode_and_trim(self, context, context_length):
