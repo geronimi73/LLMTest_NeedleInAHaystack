@@ -1,22 +1,25 @@
-import os, torch
 from LLMNeedleHaystackTester import LLMNeedleHaystackTester
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
 
 class LocalHFEvaluator(LLMNeedleHaystackTester):
-	def __init__(self, model_path, model_args={}, **kwargs):
+	def __init__(self, model_path, model_args={}, tokenizer_args={}, **kwargs):
 		self.model_name = model_path
 		self.model_to_test_description = model_path
 
-		self.model, self.tokenizer = self.load_model_tokenizer(model_path, model_args)
+		self.model, self.tokenizer = self.load_model_tokenizer(model_path, model_args, tokenizer_args)
 
 		super().__init__(**kwargs)
 
-	def load_model_tokenizer(self, model_path, model_args):
+	def load_model_tokenizer(self, model_path, model_args, tokenizer_args):
 		model = AutoModelForCausalLM.from_pretrained(
 			model_path,
 			**model_args
 		)
-		tokenizer = AutoTokenizer.from_pretrained(model_path)
+		tokenizer = AutoTokenizer.from_pretrained(
+			model_path,
+			**tokenizer_args	# this might look unnecessary but Stable LM 2 tokenize for example has to be loaded with trust_remote_code  
+		)
 
 		return model, tokenizer 
 
@@ -28,14 +31,6 @@ class LocalHFEvaluator(LLMNeedleHaystackTester):
 
 	def get_prompt(self, context):
 		return [
-			# {
-			# 	"role": "system",
-			# 	"content": "You are a helpful AI bot that answers questions for a user. Keep your response short and direct"
-			# },
-			# {
-			# 	"role": "user",
-			# 	"content": context
-			# },
 			{
 				"role": "user",
 				"content": f"{context}\n\n{self.retrieval_question} Don't give information outside the document or repeat your findings"
@@ -45,17 +40,17 @@ class LocalHFEvaluator(LLMNeedleHaystackTester):
 	async def get_response_from_model(self, messages):
 		input_tokenized = self.tokenizer.apply_chat_template(messages, return_tensors="pt").to("cuda")
 
-		with torch.no_grad():
-			output_tokenized = self.model.generate(
-				input_tokenized, 
-				max_new_tokens=300, 
-				do_sample=True)
+		output_tokenized = self.model.generate(
+			input_tokenized, 
+			max_new_tokens=300, 
+			do_sample=True)
 		output_tokenized=output_tokenized[0][len(input_tokenized[0]):]
 		output = self.tokenizer.decode(output_tokenized, skip_special_tokens=True)
 
 		return output
 
 if __name__ == "__main__":
+	# Example: Testing Mistral
 	ht = LocalHFEvaluator(
 		"models/Mistral-7B-Instruct-v0.2", 
 		{
